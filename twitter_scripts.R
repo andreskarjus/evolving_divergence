@@ -1,25 +1,23 @@
 ### packages ####
-library(httr)
-library(tidyverse)
-library(data.table)
-library(rtweet)
-library(scales)
-library(colorspace)
-
-library(Matrix)
-library(text2vec)
-library(cds)  # procrustes
-library(umap)
-library(patchwork)
-library(dbscan)
-library(ggrepel)
-library(shadowtext)
-
-library(ggimage) # for tears laugh emoji
-library(ggflags) # for us flag
-
-library(quanteda)
-library("quanteda.textstats")
+library(httr)	#	1.4.5
+library(tidyverse)	#	2.0.0
+library(data.table)	#	1.14.2
+library(rtweet)	#	1.0.2
+library(scales)	#	1.2.0
+library(colorspace)	#	2.0.3
+library(Matrix)	#	1.5.3
+library(text2vec)	#	0.6.1
+library(cds)  # procrustes	#	1.0.3
+library(umap)	#	0.2.8.0
+library(patchwork)	#	1.1.1
+library(dbscan)	#	1.1.10
+library(ggrepel)	#	0.9.3
+library(shadowtext)	#	0.1.2
+library(ggimage) # for tears laugh emoji	#	0.3.1
+library(ggflags) # for us flag	#	0.0.2
+library(quanteda)	#	3.2.1
+library(quanteda.textstats)	#	0.95
+library(zoo) # 1.8.11
 
 
 
@@ -463,9 +461,6 @@ filter_users = function(users, batchsize=89999, goal=Inf, followerfilter, debug=
   
   httr::set_config(httr::config(http_version = 0)) # on server curl will crash otherwise
   
-  
-  # Bearer Token
-  # AAAAAAAAAAAAAAAAAAAAANEdRAEAAAAAqyWX9ooXk68F7eQF0mivumv7eBE%3DtYbaOOlUJgd2v8TIG7If2NP83dTLIVxG0NdKJwzZt6I9rANzdD
   
   print(paste(Sys.time(), "Starting"))
   users1 = tibble() 

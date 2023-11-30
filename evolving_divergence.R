@@ -10,7 +10,7 @@
 
 
 source("twitter_scripts.R")  # point to scipts file
-corpusfolder ="/twitter"     # define path to corpus
+corpusfolder ="/twitter"     # define path to corpus (this is not part of this repository, as we are unfortunately legally able to share the data publicly)
 
 #### Cleaning ####
 load(file.path(corpusfolder, "followerminer/fixed", "tweets.RData"))
@@ -19,7 +19,9 @@ load(file.path(corpusfolder, "followerminer/fixed", "tweets.RData"))
 tweets = tweetfilter_spam(tweets)
 
 
-library(spacyr); spacy_initialize()  # this is initialized here not in scripts.R as it conflicts with reticulate; the two should be run in separate R sessions.
+library(spacyr); spacy_initialize()  # this is initialized here not in scripts.R as the python side conflicts with reticulate (which the rest of the codebase uses); the two should be run in separate R sessions.
+# spacyr version: 1.2.1, spaCy Version: 3.0.3, language model: en_core_web_sm
+
 lem2 = tweetlemmatizer(tweets$text, news=tweets$status_id[tweets$side=="news"])
 multiword = attr(lem2, "multiword")
 extracorpus = attr(lem2, "extras") # extract for later
@@ -248,6 +250,11 @@ g=ggplot(twumap3
 
 #### Sentiment ####
 
+# load(file.path(corpusfolder, "followerminer/fixed", "tweets2.RData"))
+# load(file.path(corpusfolder, "followerminer/fixed", "mats.RData"))
+# load(file.path(corpusfolder, "followerminer/fixed", "freqs.RData"))
+# load(file.path(corpusfolder, "followerminer/fixed", "allusers.RData"))
+
 twsent = tw %>% filter(user_id %in% okusers) %>% 
   mutate(text=gsub("🔥", "", text)) # classed as neg in vader, often leads to weird results
 tmp=twsent$text
@@ -270,6 +277,97 @@ for s in r.tmp:
 )
 twsent$sent = py$res; twsent$neu = py$neu; rm(tmp)
 twsent = twsent %>% left_join(allusers %>% select(user_id, followers_count), by = "user_id")
+
+# load(file.path(corpusfolder, "followerminer/fixed", "tweetsentiment.RData"))
+twsentsm = twsent %>% filter(neu!=1) %>% arrange(created_at) %>% mutate(d = as.Date(created_at)) %>% 
+  group_by(d, side) %>% 
+  summarise(msent = mean(sent),
+            sdsent = sd(sent),
+            q25=quantile(sent, 0.1),
+            q75=quantile(sent, 0.9)
+  ) %>% 
+  group_by(side) %>% 
+  arrange(side) %>% 
+  mutate(rollsent = rollapplyr(msent,7,mean, partial=TRUE )
+         #,rollsd =  rollapplyr(sdsent,7,mean, partial=TRUE )
+         #,rollq25 =  rollapplyr(q25,7,mean, partial=TRUE )
+         #,rollq75 =  rollapplyr(q25,7,mean, partial=TRUE )
+  ) %>% 
+  group_by(side) %>% 
+  slice_head(n=-1) %>% 
+  ungroup() %>% 
+  mutate(d=as.POSIXct(d)) %>% 
+  filter(d <= twsent %>% filter(side=="right") %>% pull(created_at) %>% max)
+
+g=ggplot(twsentsm, aes(x=d, y=rollsent, color=side, fill=side))+
+  #geom_line(aes(y=rollq25), size=1)+
+  #geom_line(aes(y=rollq75), size=1)+
+  geom_hline(yintercept=0)+
+  geom_point(aes(y=sent, x=created_at),
+             data=twsent %>% filter(neu!=1, created_at <= max(twsentsm$d)) %>% arrange(created_at),
+             size=0.3, alpha=0.5, shape=21, color="transparent", stroke=0
+             , position=position_jitter(width=0, height = 0.06)
+  )+
+  geom_line(aes(y=msent), size=0.2)+
+  geom_line(size=1.7, alpha=0.9)+
+  coord_cartesian(ylim=c(-1,1))+
+  scale_x_datetime(date_breaks = "1 month", date_labels = "%b", expand=c(0,0))+
+  scale_y_continuous(expand=expansion(add=0.01),  name = "-   Tweet sentiment   +")+
+  labs(subtitle="(a) Estimated sentiment of tweets over time", x="2021")+
+  scale_fill_manual(values=c("#007bff", "#e85d5d") %>% lighten(0.7))+
+  scale_color_manual(values=c("#007bff", "#e85d5d"))+ #c("#4A6FE3", "#D33F6A") )+
+  theme_bw()+
+  theme(legend.position = "none", 
+        #axis.title.x=element_blank(), 
+        plot.margin = margin(5,1,1,1)
+  )+
+  NULL
+# ggsave("sent.png", g, width=1000*5, height=500*5, units="px", scale=0.4)
+
+
+
+##### user sentiment ####
+options(scipen=999)
+twsent %>% filter(neu!=1) %>% count(user_id) %>% filter(n>=10) %>% nrow  # 9100 # 7730 if 10
+usent = twsent %>% filter(neu!=1) %>% group_by(user_id) %>% filter(n()>=10) %>% 
+  summarise(usent = mean(sent), sd=sd(sent), n=n(), side=side[1], followers_count = followers_count[1]) 
+# ggplot(usent, aes(x=sd, fill=side))+geom_histogram()
+# lm(sd~side, data=usent) %>% summary
+
+g2 = ggplot(usent, aes(y=usent, size=n, fill=side,color=side, x=followers_count ))+
+  geom_hline(yintercept=0)+
+  geom_point(alpha=0.5, shape=21, color="white", stroke=0.05)+
+  geom_smooth(se=F,method="lm", size=0.5)+
+  scale_size(range=c(0.3,2), breaks = c(10, 100, 300, 600))+
+  scale_fill_manual(values=c("#007bff", "#e85d5d"), guide="none")+
+  scale_color_manual(values=c("#007bff", "#e85d5d"), guide="none")+
+  scale_y_continuous(expand=expansion(add=0.01), limits = c(-1,1))+
+  scale_x_continuous(breaks=c(10,100,1000,10000, 100000),
+                     #breaks=c(seq(200,1000,100),seq(2000,5000, 1000)), 
+                     trans="log10", expand=c(0.01,0)) +
+  annotation_logticks(sides="b", size=0.3, 
+                      short = unit(.5,"mm"),
+                      mid = unit(1,"mm"),
+                      long = unit(1.5,"mm")) +
+  labs(y="-   User average sentiment   +", x="Number of followers (log10 scale)", size="Number of tweets\nper account", subtitle="(b) Estimated user sentiment (average of user tweets)")+
+  guides(size = guide_legend(title.position="top",nrow=1, override.aes = list(shape=21, color="white", fill="black")))+
+  theme_bw()+
+  theme(legend.position = c(0.95,0.05),
+        legend.direction = "horizontal",
+        legend.justification = c(1,0),
+        legend.key.width = unit(0.5, "pt"),
+        legend.key.height = unit(-1, "pt"),
+        legend.box.margin = margin(0,0,0,0),
+        legend.margin=margin(0,0,0,0),
+        legend.text = element_text(margin=margin(0,1,0,0, "pt")),
+        legend.title= element_text(size=9,margin=margin(0,0,0,0)),
+        legend.background = element_rect(fill="gray98", size = 0),
+        legend.key = element_rect(fill="gray98"),
+        plot.margin = margin(2,4,1,10),
+        panel.grid.minor.x = element_blank()
+  )+
+  #geom_smooth(method="lm")
+  NULL
 
 
 
